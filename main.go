@@ -2,14 +2,15 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"go-kvdb/db"
+	"go-kvdb/web"
 	"log"
 	"net/http"
 )
 
 var (
 	dbLocation = flag.String("db-location", "", "The path to the bolt db database")
+	httpAddr   = flag.String("http-addr", "127.0.0.1:8080", "HTTP host and port")
 )
 
 func parseFlags() {
@@ -30,21 +31,10 @@ func main() {
 
 	defer close()
 
-	http.HandleFunc("/get", func(w http.ResponseWriter, r *http.Request) {
-		r.ParseForm()
-		key := r.Form.Get("key")
-		bucket := r.Form.Get("bucket")
+	srv := web.NewServer(db)
 
-		value, err := db.getKey(bucket, key)
-		fmt.Fprintf(w, "Value = %q, error = %v", value, err)
-	})
-	http.HandleFunc("/set", func(w http.ResponseWriter, r *http.Request) {
-		r.ParseForm()
-		key := r.Form.Get("key")
-		value := r.Form.Get("value")
-		bucket := r.Form.Get("bucket")
+	http.HandleFunc("/get", srv.GetHandler)
+	http.HandleFunc("/set", srv.SetHandler)
 
-		err := db.setKey(key, bucket, []byte(value))
-		fmt.Fprint(w, "Error = %v", err)
-	})
+	log.Fatal(http.ListenAndServe(*httpAddr, nil))
 }
