@@ -66,3 +66,18 @@ func (d *Database) GetKey(bucketName string, key string) ([]byte, error) {
 	}
 	return nil, err
 }
+
+// DeleteKey
+func (d *Database) DelKey(bucketName string, key string) error {
+	return d.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucketName))
+		if b == nil {
+			return fmt.Errorf("bucket %s not found", bucketName)
+		}
+
+		return b.Delete(([]byte(key)))
+	})
+}
+
+// ListKeys in a sorted manner
+// DeleteBucket
