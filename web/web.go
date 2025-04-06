@@ -3,16 +3,21 @@ package web
 import (
 	"fmt"
 	"go-kvdb/db"
+	"hash/fnv"
 	"net/http"
 )
 
 type Server struct {
-	db *db.Database
+	db         *db.Database
+	shardIdx   int
+	shardCount int
 }
 
-func NewServer(db *db.Database) *Server {
+func NewServer(db *db.Database, shardCount, shardIdx int) *Server {
 	return &Server{
-		db: db,
+		db:         db,
+		shardIdx:   shardIdx,
+		shardCount: shardCount,
 	}
 }
 
@@ -31,8 +36,12 @@ func (s *Server) SetHandler(w http.ResponseWriter, r *http.Request) {
 	value := r.Form.Get("value")
 	bucketName := string(r.Form.Get("bucketName"))
 
+	h := fnv.New64()
+	h.Write([]byte(key))
+	shardIdx := int(h.Sum64() % uint64(s.shardCount))
+
 	err := s.db.SetKey(key, bucketName, []byte(value))
-	fmt.Fprintln(w, "Error = %v", err)
+	fmt.Fprintf(w, "Error = %v, hash = %d, shardIdx = %d", err, h.Sum64(), shardIdx)
 }
 
 // Function to create a new bucket
@@ -41,5 +50,5 @@ func (s *Server) CreateBucket(w http.ResponseWriter, r *http.Request) {
 	bucketName := string(r.Form.Get("bucketName"))
 
 	err := s.db.CreateBucketIfNotExists(bucketName)
-	fmt.Fprintln(w, "Error = %v", err)
+	fmt.Fprintf(w, "Error = %v", err)
 }
