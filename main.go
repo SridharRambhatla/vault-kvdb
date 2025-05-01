@@ -3,7 +3,7 @@ package main
 import (
 	"flag"
 	"go-kvdb/config"
-	"go-kvdb/db"
+	"go-kvdb/storage"
 	"go-kvdb/web"
 	"log"
 	"net/http"
@@ -14,6 +14,7 @@ var (
 	httpAddr   = flag.String("http-addr", "127.0.0.1:8080", "HTTP host and port")
 	configFile = flag.String("config-file", "sharding.toml", "Config file for static sharding")
 	shard      = flag.String("shard", "", "The name of the shard for data")
+	cacheSize  = flag.Int64("cache-size", 1024*1024*1024, "Cache size in bytes (default: 1GB)")
 )
 
 func parseFlags() {
@@ -31,6 +32,7 @@ func parseFlags() {
 func main() {
 	parseFlags()
 
+	// Parse sharding configuration
 	c, err := config.ParseFile(*configFile)
 	if err != nil {
 		log.Fatalf("Error parsing config %q: %v", *configFile, err)
@@ -43,18 +45,25 @@ func main() {
 
 	log.Printf("Shard count is %d, current shard: %d", shards.Count, shards.CurIdx)
 
-	db, close, err := db.NewDatabase(*dbLocation)
+	// Initialize storage
+	store, err := storage.NewStorage(*dbLocation)
 	if err != nil {
-		log.Fatalf("Something went wrong %q %v", *dbLocation, err)
+		log.Fatalf("Failed to initialize storage: %v", err)
 	}
+	defer store.Close()
 
-	defer close()
+	// Initialize server with storage, cache, and sharding
+	srv := web.NewServer(store, shards, *cacheSize)
 
-	srv := web.NewServer(db, shards)
+	// Register API routes
+	http.HandleFunc("/api/v1/topics", srv.CreateTopicHandler)
+	http.HandleFunc("/api/v1/topics/", srv.GetTopicHandler)
+	http.HandleFunc("/api/v1/topics/", srv.StoreContextHandler)
+	http.HandleFunc("/api/v1/topics/", srv.GetContextHandler)
+	http.HandleFunc("/api/v1/topics/", srv.DeleteContextHandler)
+	http.HandleFunc("/api/v1/topics", srv.ListTopicsHandler)
+	http.HandleFunc("/api/v1/topics/", srv.ListContextsHandler)
 
-	http.HandleFunc("/get", srv.GetHandler)
-	http.HandleFunc("/set", srv.SetHandler)
-	http.HandleFunc("/createBucket", srv.CreateBucket)
-
+	log.Printf("Starting server on %s", *httpAddr)
 	log.Fatal(http.ListenAndServe(*httpAddr, nil))
 }

@@ -19,11 +19,9 @@ type Config struct {
 
 func ParseFile(filename string) (Config, error) {
 	var c Config
-	fmt.Printf("c value before decoding %v\n", c)
 	if _, err := toml.DecodeFile(filename, &c); err != nil {
 		return Config{}, err
 	}
-	fmt.Printf("c value after decoding %v\n", c)
 	return c, nil
 }
 
