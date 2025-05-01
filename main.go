@@ -7,8 +7,6 @@ import (
 	"go-kvdb/web"
 	"log"
 	"net/http"
-
-	"github.com/BurntSushi/toml"
 )
 
 var (
@@ -33,24 +31,17 @@ func parseFlags() {
 func main() {
 	parseFlags()
 
-	var c config.Config
-	if _, err := toml.DecodeFile(*configFile, &c); err != nil {
-		log.Fatalf("Failed to read config file: %v", err)
+	c, err := config.ParseFile(*configFile)
+	if err != nil {
+		log.Fatalf("Error parsing config %q: %v", *configFile, err)
 	}
 
-	var shardCount int
-	var shardIdx int
-	shardCount = len(c.Shards)
-	for _, s := range c.Shards {
-		if s.Name == *shard {
-			shardIdx = s.Idx
-		}
-	}
-	if shardIdx < 0 {
-		log.Fatalf("Shard %q was not found", *shard)
+	shards, err := config.ParseShards(c.Shards, *shard)
+	if err != nil {
+		log.Fatalf("Error parsing shards config: %v", err)
 	}
 
-	log.Printf("Total shard count is %d, current shard key is - %d", shardCount, shardIdx)
+	log.Printf("Shard count is %d, current shard: %d", shards.Count, shards.CurIdx)
 
 	db, close, err := db.NewDatabase(*dbLocation)
 	if err != nil {
@@ -59,7 +50,7 @@ func main() {
 
 	defer close()
 
-	srv := web.NewServer(db, shardCount, shardIdx)
+	srv := web.NewServer(db, shards)
 
 	http.HandleFunc("/get", srv.GetHandler)
 	http.HandleFunc("/set", srv.SetHandler)

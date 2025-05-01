@@ -2,32 +2,54 @@ package web
 
 import (
 	"fmt"
+	"go-kvdb/config"
 	"go-kvdb/db"
-	"hash/fnv"
+	"io"
 	"net/http"
 )
 
+// Server contains HTTP method handlers to be used for the database.
 type Server struct {
-	db         *db.Database
-	shardIdx   int
-	shardCount int
+	db     *db.Database
+	shards *config.Shards
 }
 
-func NewServer(db *db.Database, shardCount, shardIdx int) *Server {
+// NewServer creates a new instance with HTTP handlers to be used to get and set values.
+func NewServer(db *db.Database, s *config.Shards) *Server {
 	return &Server{
-		db:         db,
-		shardIdx:   shardIdx,
-		shardCount: shardCount,
+		db:     db,
+		shards: s,
 	}
+}
+
+func (s *Server) redirect(shard int, w http.ResponseWriter, r *http.Request) {
+	url := "http://" + s.shards.Addrs[shard] + r.RequestURI
+	fmt.Fprintf(w, "redirecting from shard %d to shard %d (%q)\n", s.shards.CurIdx, shard, url)
+
+	resp, err := http.Get(url)
+	if err != nil {
+		w.WriteHeader(500)
+		fmt.Fprintf(w, "Error redirecting the request: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	io.Copy(w, resp.Body)
 }
 
 func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	key := r.Form.Get("key")
 	bucketName := r.Form.Get("bucketName")
-
+	shard := s.shards.Index(key)
 	value, err := s.db.GetKey(bucketName, key)
-	fmt.Fprintf(w, "Value = %q, error = %v", value, err)
+
+	if shard != s.shards.CurIdx {
+		s.redirect(shard, w, r)
+		return
+	}
+
+	fmt.Fprintf(w, "Shard = %d, current shard = %d, addr = %q, Value = %q, error = %v", shard, s.shards.CurIdx, s.shards.Addrs[shard], value, err)
 }
 
 func (s *Server) SetHandler(w http.ResponseWriter, r *http.Request) {
@@ -36,12 +58,13 @@ func (s *Server) SetHandler(w http.ResponseWriter, r *http.Request) {
 	value := r.Form.Get("value")
 	bucketName := string(r.Form.Get("bucketName"))
 
-	h := fnv.New64()
-	h.Write([]byte(key))
-	shardIdx := int(h.Sum64() % uint64(s.shardCount))
-
+	shard := s.shards.Index(key)
+	if shard != s.shards.CurIdx {
+		s.redirect(shard, w, r)
+		return
+	}
 	err := s.db.SetKey(key, bucketName, []byte(value))
-	fmt.Fprintf(w, "Error = %v, hash = %d, shardIdx = %d", err, h.Sum64(), shardIdx)
+	fmt.Fprintf(w, "Error = %v, shardIdx = %d, current shard = %d", err, shard, s.shards.CurIdx)
 }
 
 // Function to create a new bucket
