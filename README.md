@@ -1,215 +1,120 @@
-# Go-KVDB: Distributed Key-Value Database with Context Management
+# Vault
 
-A distributed key-value database designed to serve as a context manager for large language models (LLMs). It provides efficient storage, retrieval, and caching of LLM contexts while supporting horizontal scaling through sharding.
+Vault is a lightweight, in-memory context management system designed specifically for local AI agents. It provides a simple way to store, retrieve, and manage conversation contexts before model inference.
 
 ## Features
 
-- **Distributed Architecture**: Horizontal scaling through sharding
-- **Context Management**: Store and retrieve LLM contexts efficiently
-- **Caching**: LRU cache for frequently accessed contexts
-- **Compression**: Data compression to save storage space
-- **REST API**: Easy integration with any application
-- **Ollama Integration**: Built-in support for Ollama LLM
+- In-memory storage with LRU cache for fast context retrieval
+- Topic-based organization of contexts
+- RESTful API endpoints
+- Python client library
+- Thread-safe operations
+- Automatic cache eviction based on size
 
-## Getting Started
+## Use Cases
 
-### Prerequisites
+- Store conversation history for local LLMs
+- Manage context windows for different topics
+- Cache frequently accessed contexts
+- Share contexts between multiple agents
+- Pre-inference context preparation
 
-- Go 1.21 or later
-- Ollama installed and running locally (for LLM integration)
+## Installation
 
-### Installation
+### Server
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/yourusername/go-kvdb.git
-   cd go-kvdb
-   ```
-
-2. Install dependencies:
-   ```bash
-   go mod download
-   ```
-
-3. Build the project:
-   ```bash
-   go build
-   ```
-
-### Running the Server
-
-The server can be run in two modes:
-
-#### Single Node Mode
-
-For development or small deployments:
 ```bash
-go-kvdb -db-location=database/kvdb.db -http-addr=127.0.0.1:8080 -cache-size=1073741824
+# Clone the repository
+git clone https://github.com/yourusername/vault.git
+cd vault
+
+# Build the server
+go build -o vault.exe cmd/vault/main.go
 ```
 
-#### Sharded Mode
+### Python Client
 
-For production deployments with multiple nodes:
-
-1. Configure shards in `sharding.toml`:
-   ```toml
-   [[shards]]
-   name = "sh-1"
-   idx = 0
-   address = "127.0.0.1:8080"
-
-   [[shards]]
-   name = "sh-2"
-   idx = 1
-   address = "127.0.0.1:8081"
-
-   [[shards]]
-   name = "sh-3"
-   idx = 2
-   address = "127.0.0.1:8082"
-   ```
-
-2. Start all nodes using the provided scripts:
-   - Windows: `launch.bat`
-   - Linux/macOS: `./launch.sh`
-
-   Or start nodes individually:
-   ```bash
-   # Node 1
-   go-kvdb -db-location=database/sh-1.db -http-addr=127.0.0.1:8080 -config-file=sharding.toml -shard=sh-1 -cache-size=1073741824
-
-   # Node 2
-   go-kvdb -db-location=database/sh-2.db -http-addr=127.0.0.1:8081 -config-file=sharding.toml -shard=sh-2 -cache-size=1073741824
-
-   # Node 3
-   go-kvdb -db-location=database/sh-3.db -http-addr=127.0.0.1:8082 -config-file=sharding.toml -shard=sh-3 -cache-size=1073741824
-   ```
-
-### Configuration
-
-- `-db-location`: Path to the database file
-- `-http-addr`: HTTP server address and port
-- `-config-file`: Path to sharding configuration file (required for sharded mode)
-- `-shard`: Name of the current shard (required for sharded mode)
-- `-cache-size`: Cache size in bytes (default: 1GB)
-
-You can also set the cache size using the `KVDB_CACHE_SIZE` environment variable:
 ```bash
-# Windows
-set KVDB_CACHE_SIZE=2147483648  # 2GB
-.\launch.bat
-
-# Linux/macOS
-KVDB_CACHE_SIZE=2147483648 ./launch.sh  # 2GB
+pip install requests
 ```
 
-## API Documentation
+## Usage
+
+### Starting the Server
+
+```bash
+./vault.exe --http-addr=127.0.0.1:8080 --cache-size=1073741824
+```
+
+### Using the Python Client
+
+```python
+from vault_client import VaultClient, Context, Message, Metadata
+from datetime import datetime
+import uuid
+
+# Create a client instance
+client = VaultClient()
+
+# Create a topic for your AI agent
+topic = client.create_topic("my-agent", "Conversation history for my AI agent")
+
+# Store a context before inference
+context = Context(
+    id=str(uuid.uuid4()),
+    topic=topic.name,
+    messages=[
+        Message(role="user", content="What is the capital of France?"),
+        Message(role="assistant", content="The capital of France is Paris.")
+    ],
+    metadata=Metadata(
+        agent_id="my-agent",
+        tags=["geography", "capitals"],
+        properties={"model": "local-llm", "temperature": "0.7"}
+    ),
+    created_at=datetime.now(),
+    updated_at=datetime.now()
+)
+
+# Store the context
+stored_context = client.store_context(context)
+
+# Retrieve the context before inference
+retrieved_context = client.get_context(topic.name, stored_context.id)
+```
+
+## API Endpoints
 
 ### Topics
 
-#### Create Topic
-```http
-POST /api/v1/topics
-Content-Type: application/json
-
-{
-    "name": "my-topic"
-}
-```
-
-#### Get Topic
-```http
-GET /api/v1/topics/{topic-name}
-```
-
-#### List Topics
-```http
-GET /api/v1/topics
-```
+- `POST /api/v1/topics` - Create a new topic
+- `POST /api/v1/topics/get` - Get a topic by name
+- `GET /api/v1/topics/list` - List all topics
 
 ### Contexts
 
-#### Store Context
-```http
-POST /api/v1/topics/{topic-name}/contexts
-Content-Type: application/json
+- `POST /api/v1/topics/contexts/store` - Store a context
+- `POST /api/v1/topics/contexts/get` - Get a context by ID
+- `POST /api/v1/topics/contexts/delete` - Delete a context
+- `POST /api/v1/topics/contexts/list` - List all contexts in a topic
 
+## Response Format
+
+All API responses follow this format:
+
+```json
 {
-    "metadata": {
-        "id": "context-1",
-        "created_at": "2024-03-20T10:00:00Z",
-        "model": "llama2",
-        "tags": ["chat", "support"]
+    "success": true,
+    "data": {
+        // Response data
     },
-    "content": {
-        "text": "Previous conversation context...",
-        "embeddings": [...]
-    }
+    "error": null
 }
 ```
 
-#### Get Context
-```http
-GET /api/v1/topics/{topic-name}/contexts/{context-id}
-```
+## Error Handling
 
-#### Delete Context
-```http
-DELETE /api/v1/topics/{topic-name}/contexts/{context-id}
-```
-
-#### List Contexts
-```http
-GET /api/v1/topics/{topic-name}/contexts
-```
-
-## Sharding
-
-The database uses consistent hashing to distribute data across shards. Each key (topic name or context ID) is hashed to determine which shard should handle it. The system automatically redirects requests to the correct shard.
-
-### Benefits
-
-1. **Scalability**: Distribute data across multiple nodes
-2. **Performance**: Each shard handles a subset of the data
-3. **Fault Tolerance**: If one shard fails, others continue to operate
-4. **Geographic Distribution**: Shards can be placed in different locations
-
-### Adding New Shards
-
-1. Add the new shard configuration to `sharding.toml`
-2. Create a new database file for the shard
-3. Start the new shard node
-4. The system will automatically redistribute data
-
-## Future Enhancements
-
-### High Priority
-- [ ] Implement data rebalancing when adding/removing shards
-- [ ] Add replication for fault tolerance
-- [ ] Implement shard health monitoring
-- [ ] Add metrics and monitoring
-
-### Medium Priority
-- [ ] Support for more LLM providers
-- [ ] Advanced caching strategies
-- [ ] Query optimization
-- [ ] Backup and restore functionality
-
-## Security and Privacy
-
-- [ ] Add authentication and authorization
-- [ ] Implement data encryption
-- [ ] Add rate limiting
-- [ ] Implement audit logging
-
-## Technical Stack
-
-- **Language**: Go
-- **Database**: BoltDB
-- **Caching**: Custom LRU cache
-- **API**: REST
-- **Configuration**: TOML
-- **LLM Integration**: Ollama
+The Python client raises exceptions for HTTP errors and invalid responses. The server returns appropriate HTTP status codes and error messages in the response body.
 
 ## Contributing
 
@@ -217,4 +122,4 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details. 
+This project is licensed under the MIT License - see the LICENSE file for details.
