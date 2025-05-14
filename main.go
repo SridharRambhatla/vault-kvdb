@@ -20,11 +20,11 @@ func parseFlags() {
 	flag.Parse()
 
 	if *dbLocation == "" {
-		log.Fatal("Must pass db-location")
+		log.Fatalf("Must provide db-location")
 	}
 
 	if *shard == "" {
-		log.Fatal("Must pass shard")
+		log.Fatalf("Must provide shard")
 	}
 }
 
@@ -45,15 +45,15 @@ func main() {
 
 	db, close, err := db.NewDatabase(*dbLocation)
 	if err != nil {
-		log.Fatalf("Something went wrong %q %v", *dbLocation, err)
+		log.Fatalf("Error creating %q: %v", *dbLocation, err)
 	}
-
 	defer close()
 
 	srv := web.NewServer(db, shards)
 
 	http.HandleFunc("/get", srv.GetHandler)
 	http.HandleFunc("/set", srv.SetHandler)
+	http.HandleFunc("/purge", srv.DeleteExtraKeysHandler)
 	http.HandleFunc("/createBucket", srv.CreateBucket)
 
 	log.Fatal(http.ListenAndServe(*httpAddr, nil))

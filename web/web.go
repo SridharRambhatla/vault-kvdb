@@ -75,3 +75,12 @@ func (s *Server) CreateBucket(w http.ResponseWriter, r *http.Request) {
 	err := s.db.CreateBucketIfNotExists(bucketName)
 	fmt.Fprintf(w, "Error = %v", err)
 }
+
+// DeleteExtraKeysHandler deletes keys that don't belong to the current shard.
+func (s *Server) DeleteExtraKeysHandler(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	bucketName := string(r.Form.Get("bucketName"))
+	fmt.Fprintf(w, "Error = %v", s.db.DeleteExtraKeys(func(key string) bool {
+		return s.shards.Index(key) != s.shards.CurIdx
+	}, bucketName))
+}

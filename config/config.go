@@ -7,26 +7,31 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
+// Shard describes a shard that holds the appropriate set of keys.
+// Each shard has unique set of keys.
 type Shard struct {
 	Name    string
 	Idx     int
 	Address string
 }
 
+// Config describes the sharding config.
 type Config struct {
 	Shards []Shard
 }
 
+// ParseFile parses the config and returns it upon success.
 func ParseFile(filename string) (Config, error) {
 	var c Config
-	fmt.Printf("c value before decoding %v\n", c)
 	if _, err := toml.DecodeFile(filename, &c); err != nil {
 		return Config{}, err
 	}
-	fmt.Printf("c value after decoding %v\n", c)
 	return c, nil
 }
 
+// Shards represents an easier-to-use representation of
+// the sharding config: the shards count, current index and
+// the addresses of all other shards too.
 type Shards struct {
 	Count  int
 	CurIdx int
@@ -39,17 +44,21 @@ type Shards struct {
 func ParseShards(shards []Shard, curShardName string) (*Shards, error) {
 	shardCount := len(shards)
 	shardIdx := -1
-	shardAddr := make(map[int]string)
+	addrs := make(map[int]string)
 
 	for _, s := range shards {
-		shardAddr[s.Idx] = s.Address
+		if _, ok := addrs[s.Idx]; ok {
+			return nil, fmt.Errorf("duplicate shard index: %d", s.Idx)
+		}
+
+		addrs[s.Idx] = s.Address
 		if s.Name == curShardName {
 			shardIdx = s.Idx
 		}
 	}
 
 	for i := 0; i < shardCount; i++ {
-		if _, ok := shardAddr[i]; !ok {
+		if _, ok := addrs[i]; !ok {
 			return nil, fmt.Errorf("shard %d is not found", i)
 		}
 	}
@@ -59,7 +68,7 @@ func ParseShards(shards []Shard, curShardName string) (*Shards, error) {
 	}
 
 	return &Shards{
-		Addrs:  shardAddr,
+		Addrs:  addrs,
 		Count:  shardCount,
 		CurIdx: shardIdx,
 	}, nil
