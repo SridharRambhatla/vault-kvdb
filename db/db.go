@@ -50,7 +50,7 @@ func (d *Database) SetKey(key string, bucketName string, value []byte) error {
 }
 
 // GetKey gets the value of the requested key from the specified bucket.
-func (d *Database) GetKey(bucketName string, key string) ([]byte, error) {
+func (d *Database) GetKey(key string, bucketName string) ([]byte, error) {
 	var result []byte
 	err := d.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucketName))
