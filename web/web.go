@@ -42,7 +42,7 @@ func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
 	key := r.Form.Get("key")
 	bucketName := r.Form.Get("bucketName")
 	shard := s.shards.Index(key)
-	value, err := s.db.GetKey(bucketName, key)
+	value, err := s.db.GetKey(key, bucketName)
 
 	if shard != s.shards.CurIdx {
 		s.redirect(shard, w, r)
