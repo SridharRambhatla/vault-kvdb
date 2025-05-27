@@ -55,6 +55,8 @@ func main() {
 	http.HandleFunc("/set", srv.SetHandler)
 	http.HandleFunc("/purge", srv.DeleteExtraKeysHandler)
 	http.HandleFunc("/createBucket", srv.CreateBucket)
+	http.HandleFunc("/deleteBucket", srv.DeleteBucketHandler)
+	http.HandleFunc("/listKeys", srv.ListKeysHandler)
 
 	log.Fatal(http.ListenAndServe(*httpAddr, nil))
 }

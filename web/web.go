@@ -28,59 +28,194 @@ func (s *Server) redirect(shard int, w http.ResponseWriter, r *http.Request) {
 
 	resp, err := http.Get(url)
 	if err != nil {
-		w.WriteHeader(500)
-		fmt.Fprintf(w, "Error redirecting the request: %v", err)
+		http.Error(w, fmt.Sprintf("Error redirecting the request: %v", err), http.StatusInternalServerError)
 		return
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		http.Error(w, fmt.Sprintf("Error from target shard: %s", resp.Status), resp.StatusCode)
+		return
+	}
 
 	io.Copy(w, resp.Body)
 }
 
 func (s *Server) GetHandler(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
-	key := r.Form.Get("key")
-	bucketName := r.Form.Get("bucketName")
-	shard := s.shards.Index(key)
-	value, err := s.db.GetKey(key, bucketName)
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Error parsing form", http.StatusBadRequest)
+		return
+	}
 
+	key := r.Form.Get("key")
+	if key == "" {
+		http.Error(w, "key parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	bucketName := r.Form.Get("bucketName")
+	if bucketName == "" {
+		bucketName = "default"
+	}
+
+	shard := s.shards.Index(key)
 	if shard != s.shards.CurIdx {
 		s.redirect(shard, w, r)
 		return
 	}
 
-	fmt.Fprintf(w, "Shard = %d, current shard = %d, addr = %q, Value = %q, error = %v", shard, s.shards.CurIdx, s.shards.Addrs[shard], value, err)
+	value, err := s.db.GetKey(key, bucketName)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error getting key: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	if value == nil {
+		http.Error(w, "Key not found", http.StatusNotFound)
+		return
+	}
+
+	fmt.Fprintf(w, "Shard = %d, current shard = %d, addr = %q, Value = %q",
+		shard, s.shards.CurIdx, s.shards.Addrs[shard], value)
 }
 
 func (s *Server) SetHandler(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Error parsing form", http.StatusBadRequest)
+		return
+	}
+
 	key := r.Form.Get("key")
+	if key == "" {
+		http.Error(w, "key parameter is required", http.StatusBadRequest)
+		return
+	}
+
 	value := r.Form.Get("value")
-	bucketName := string(r.Form.Get("bucketName"))
+	if value == "" {
+		http.Error(w, "value parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	bucketName := r.Form.Get("bucketName")
+	if bucketName == "" {
+		bucketName = "default"
+	}
 
 	shard := s.shards.Index(key)
 	if shard != s.shards.CurIdx {
 		s.redirect(shard, w, r)
 		return
 	}
+
 	err := s.db.SetKey(key, bucketName, []byte(value))
-	fmt.Fprintf(w, "Error = %v, shardIdx = %d, current shard = %d", err, shard, s.shards.CurIdx)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error setting key: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	fmt.Fprintf(w, "Successfully set key in shard %d", shard)
 }
 
 // Function to create a new bucket
 func (s *Server) CreateBucket(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
-	bucketName := string(r.Form.Get("bucketName"))
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Error parsing form", http.StatusBadRequest)
+		return
+	}
+
+	bucketName := r.Form.Get("bucketName")
+	if bucketName == "" {
+		http.Error(w, "bucketName parameter is required", http.StatusBadRequest)
+		return
+	}
 
 	err := s.db.CreateBucketIfNotExists(bucketName)
-	fmt.Fprintf(w, "Error = %v", err)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error creating bucket: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	fmt.Fprintf(w, "Successfully created bucket %s", bucketName)
 }
 
 // DeleteExtraKeysHandler deletes keys that don't belong to the current shard.
 func (s *Server) DeleteExtraKeysHandler(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
-	bucketName := string(r.Form.Get("bucketName"))
-	fmt.Fprintf(w, "Error = %v", s.db.DeleteExtraKeys(func(key string) bool {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Error parsing form", http.StatusBadRequest)
+		return
+	}
+
+	bucketName := r.Form.Get("bucketName")
+	if bucketName == "" {
+		bucketName = "default"
+	}
+
+	err := s.db.DeleteExtraKeys(func(key string) bool {
 		return s.shards.Index(key) != s.shards.CurIdx
-	}, bucketName))
+	}, bucketName)
+
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error deleting extra keys: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	fmt.Fprintf(w, "Successfully deleted extra keys from bucket %s", bucketName)
+}
+
+// DeleteBucketHandler handles the deletion of a bucket.
+func (s *Server) DeleteBucketHandler(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Error parsing form", http.StatusBadRequest)
+		return
+	}
+
+	bucketName := r.Form.Get("bucketName")
+	if bucketName == "" {
+		http.Error(w, "bucketName parameter is required", http.StatusBadRequest)
+		return
+	}
+
+	// Don't allow deletion of the default bucket
+	if bucketName == "default" {
+		http.Error(w, "Cannot delete the default bucket", http.StatusBadRequest)
+		return
+	}
+
+	err := s.db.DeleteBucket(bucketName)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error deleting bucket: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	fmt.Fprintf(w, "Successfully deleted bucket %s", bucketName)
+}
+
+// ListKeysHandler returns all keys in the specified bucket.
+func (s *Server) ListKeysHandler(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Error parsing form", http.StatusBadRequest)
+		return
+	}
+
+	bucketName := r.Form.Get("bucketName")
+	if bucketName == "" {
+		bucketName = "default"
+	}
+
+	keys, err := s.db.ListKeys(bucketName)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error listing keys: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	if len(keys) == 0 {
+		fmt.Fprintf(w, "No keys found in bucket %s", bucketName)
+		return
+	}
+
+	fmt.Fprintf(w, "Keys in bucket %s:\n", bucketName)
+	for _, key := range keys {
+		fmt.Fprintf(w, "- %s\n", key)
+	}
 }

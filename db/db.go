@@ -2,6 +2,7 @@ package db
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/boltdb/bolt"
 )
@@ -110,5 +111,38 @@ func (d *Database) DeleteExtraKeys(isExtra func(string) bool, bucketName string)
 	})
 }
 
-// ListKeys in a sorted manner
-// DeleteBucket
+// ListKeys returns all keys in the specified bucket in sorted order.
+func (d *Database) ListKeys(bucketName string) ([]string, error) {
+	var keys []string
+
+	err := d.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucketName))
+		if b == nil {
+			return fmt.Errorf("bucket %s not found", bucketName)
+		}
+
+		return b.ForEach(func(k, v []byte) error {
+			keys = append(keys, string(k))
+			return nil
+		})
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	sort.Strings(keys)
+	return keys, nil
+}
+
+// DeleteBucket deletes the specified bucket and all its contents.
+func (d *Database) DeleteBucket(bucketName string) error {
+	return d.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucketName))
+		if b == nil {
+			return fmt.Errorf("bucket %s not found", bucketName)
+		}
+
+		return tx.DeleteBucket([]byte(bucketName))
+	})
+}
